@@ -1,0 +1,73 @@
+version: 2
+
+project_name: remote-shell-mcp
+
+before:
+  hooks:
+    - go mod tidy
+
+builds:
+  - id: daemon
+    main: ./cmd/remote-shell-mcpd
+    binary: remote-shell-mcpd
+    env:
+      - CGO_ENABLED=0
+    goos: [darwin, linux]
+    goarch: [amd64, arm64]
+    ldflags:
+      - -s -w
+      - -X main.version={{.Version}}
+
+  - id: launcher
+    main: ./cmd/remote-shell-mcp
+    binary: remote-shell-mcp
+    env:
+      - CGO_ENABLED=0
+    goos: [darwin, linux]
+    goarch: [amd64, arm64]
+    ldflags:
+      - -s -w
+      - -X main.version={{.Version}}
+
+archives:
+  - id: default
+    ids: [daemon, launcher]
+    name_template: >-
+      {{ .ProjectName }}_{{ .Version }}_{{ .Os }}_{{ .Arch }}
+    formats: [tar.gz]
+    format_overrides:
+      - goos: windows
+        formats: [zip]
+    files:
+      - LICENSE
+      - README.md
+
+checksum:
+  name_template: "checksums.txt"
+
+snapshot:
+  version_template: "{{ incpatch .Version }}-next"
+
+changelog:
+  use: github
+  sort: asc
+  filters:
+    exclude:
+      - "^docs?:"
+      - "^test:"
+      - "^chore:"
+      - "Merge pull request"
+
+release:
+  github:
+    owner: jaenster
+    name: remote-shell-mcp
+  header: |
+    ## remote-shell-mcp {{ .Tag }}
+
+    Install with:
+    ```
+    curl -fsSL https://raw.githubusercontent.com/jaenster/remote-shell-mcp/main/install.sh | sh
+    ```
+
+    Or download the archive for your platform below.

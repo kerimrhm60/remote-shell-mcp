@@ -1,5 +1,6 @@
 # Build output
 /bin/
+/dist/
 
 # Local state (per-machine)
 *.token

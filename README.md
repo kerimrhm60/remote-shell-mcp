@@ -29,21 +29,63 @@ It runs as a daemon. Your MCP client talks to a tiny stdio launcher that auto-sp
 | **Auth** | 32-byte random Bearer token on the SSE endpoint, rotated each daemon restart, stored 0600 in the same config dir |
 | **Bridge** | launcher reconnects with exponential backoff if the daemon flaps; survives token rotation; parallel POST dispatch (up to 128 in flight) |
 
-## Quick start
+## Install
+
+One-liner (Linux / macOS, amd64 or arm64):
 
 ```
-# 1. Build both binaries
+curl -fsSL https://raw.githubusercontent.com/jaenster/remote-shell-mcp/main/install.sh | sh
+```
+
+That fetches the latest release, places both binaries on `PATH` (`/usr/local/bin` if writable, else `~/.local/bin`), and runs `remote-shell-mcp setup` to register itself with every MCP client it detects on the system.
+
+Flags the script accepts:
+
+```
+| sh -s -- --version v0.1.0     # pin a specific release
+| sh -s -- --dir /usr/local/bin # explicit install dir
+| sh -s -- --no-setup           # don't wire into MCP clients
+| sh -s -- --yes                # non-interactive setup (install into every detected client)
+```
+
+### Alternatives
+
+```
+# Go users — single command, builds from source.
+go install github.com/jaenster/remote-shell-mcp/cmd/remote-shell-mcp@latest
+go install github.com/jaenster/remote-shell-mcp/cmd/remote-shell-mcpd@latest
+remote-shell-mcp setup
+```
+
+```
+# Build from source manually:
+git clone https://github.com/jaenster/remote-shell-mcp && cd remote-shell-mcp
 go build -o bin/remote-shell-mcpd ./cmd/remote-shell-mcpd
 go build -o bin/remote-shell-mcp  ./cmd/remote-shell-mcp
-
-# 2. Put them on PATH (or keep side-by-side; the launcher locates the daemon either way)
 cp bin/remote-shell-mcp{,d} ~/.local/bin/
-
-# 3. Add it to your MCP client. Claude Code:
-claude mcp add remote-shell ~/.local/bin/remote-shell-mcp
+remote-shell-mcp setup
 ```
 
-Same shape for other clients:
+### `setup` — auto-register with MCP clients
+
+`remote-shell-mcp setup` detects supported clients and offers to add itself in each one's config. Currently:
+
+|-|-|
+| **Claude Code CLI** | `~/.claude.json` `mcpServers` block |
+| **Claude Desktop** | `~/Library/Application Support/Claude/claude_desktop_config.json` (macOS) / `%APPDATA%\Claude` (Windows) / `~/.config/Claude` (Linux) |
+| **Codex CLI** | `~/.codex/config.toml` `[mcp_servers.<name>]` block |
+
+The setup command is idempotent (re-running it is a no-op if the entry already exists with the same command), backs up any existing config file to `.bak` before writing, and supports `--dry-run` to preview the change.
+
+```
+remote-shell-mcp setup                 # interactive: asks about each detected client
+remote-shell-mcp setup --yes           # install into every detected client
+remote-shell-mcp setup --dry-run       # show what would be written, touch no files
+remote-shell-mcp setup --client codex  # only this one
+remote-shell-mcp setup --name my-shell # register under a different MCP server name
+```
+
+If you'd rather edit configs by hand, the format is just:
 
 ```json
 {

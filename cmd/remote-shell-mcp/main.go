@@ -12,9 +12,22 @@ import (
 
 	"github.com/jaenster/remote-shell-mcp/internal/daemon"
 	"github.com/jaenster/remote-shell-mcp/internal/launcher"
+	"github.com/jaenster/remote-shell-mcp/internal/setup"
 )
 
 func main() {
+	// Subcommand dispatch — `setup` registers this binary with detected MCP
+	// clients. Anything else (or no subcommand) runs the stdio proxy as
+	// before, so the MCP client invoking us just sees the JSON-RPC stream.
+	if len(os.Args) > 1 && os.Args[1] == "setup" {
+		runSetup(os.Args[2:])
+		return
+	}
+	if len(os.Args) > 1 && os.Args[1] == "version" {
+		fmt.Println("remote-shell-mcp", version)
+		return
+	}
+
 	addr := flag.String("addr", envOr("REMOTE_SHELL_MCP_ADDR", "127.0.0.1:7800"), "Daemon SSE address (host:port).")
 	daemonBin := flag.String("daemon-binary", envOr("REMOTE_SHELL_MCP_DAEMON", ""), "Path to the remote-shell-mcpd binary. If empty, looks on PATH and next to this binary.")
 	tokenPath := flag.String("token", envOr("REMOTE_SHELL_MCP_TOKEN", ""), "Path to the daemon's auth token file. Defaults to $XDG_CONFIG_HOME/remote-shell-mcp/daemon.token.")
@@ -130,4 +143,51 @@ func envOr(key, def string) string {
 		return v
 	}
 	return def
+}
+
+// version is overridden via -ldflags at release-time; ldflags target is
+// `main.version`.
+var version = "dev"
+
+func runSetup(args []string) {
+	fs := flag.NewFlagSet("setup", flag.ExitOnError)
+	name := fs.String("name", "remote-shell", "MCP server name to register.")
+	binary := fs.String("binary", "", "Path to write into the MCP config's `command` field (default: this binary).")
+	only := fs.String("client", "", "Only install into clients whose name contains this substring (e.g. \"claude\" or \"codex\"). Default: ask about each detected client.")
+	yes := fs.Bool("yes", false, "Don't prompt — install into every detected client.")
+	dryRun := fs.Bool("dry-run", false, "Print what would be written without touching any files.")
+	fs.Usage = func() {
+		fmt.Fprintln(fs.Output(), "Usage: remote-shell-mcp setup [flags]")
+		fmt.Fprintln(fs.Output())
+		fmt.Fprintln(fs.Output(), "Detects supported MCP clients (Claude Code, Claude Desktop, Codex CLI)")
+		fmt.Fprintln(fs.Output(), "and registers this binary as an MCP server in each one's config.")
+		fmt.Fprintln(fs.Output())
+		fmt.Fprintln(fs.Output(), "Flags:")
+		fs.PrintDefaults()
+	}
+	if err := fs.Parse(args); err != nil {
+		os.Exit(2)
+	}
+
+	opts := setup.Options{
+		ServerName: *name,
+		SelfBinary: *binary,
+		OnlyClient: *only,
+		Yes:        *yes,
+		DryRun:     *dryRun,
+	}
+	results, err := setup.Run(opts)
+	if err != nil {
+		fmt.Fprintln(os.Stderr, "setup:", err)
+		os.Exit(1)
+	}
+	var failed int
+	for _, r := range results {
+		if r.Err != nil {
+			failed++
+		}
+	}
+	if failed > 0 {
+		os.Exit(1)
+	}
 }
