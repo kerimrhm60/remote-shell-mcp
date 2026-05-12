@@ -61,8 +61,37 @@ func (p *Proxy) Run(ctx context.Context) error {
 	errCh := make(chan error, 2)
 	var once sync.Once
 
+	// Data-starvation watchdog. mcp-go sends an SSE keepalive every 15s, so
+	// a healthy stream is never silent for more than ~15s. If we see nothing
+	// for 45s, the underlying TCP is hung (NAT reset, half-closed FIN never
+	// arrived, daemon SIGKILL'd, …) — close the body so readSSE escapes its
+	// Read() and the outer reconnect loop kicks in. lastSeen is updated by
+	// readSSE on every byte received.
+	var lastSeen atomic.Int64
+	lastSeen.Store(time.Now().UnixNano())
+	watchdogStop := make(chan struct{})
 	go func() {
-		errCh <- p.readSSE(resp.Body, endpointCh, &once)
+		const idleLimit = 45 * time.Second
+		t := time.NewTicker(5 * time.Second)
+		defer t.Stop()
+		for {
+			select {
+			case <-watchdogStop:
+				return
+			case <-ctx.Done():
+				return
+			case now := <-t.C:
+				if last := time.Unix(0, lastSeen.Load()); now.Sub(last) > idleLimit {
+					_ = resp.Body.Close() // unblocks readSSE → errCh gets the error
+					return
+				}
+			}
+		}
+	}()
+	defer close(watchdogStop)
+
+	go func() {
+		errCh <- p.readSSE(resp.Body, endpointCh, &once, &lastSeen)
 	}()
 
 	var postURL string
@@ -93,8 +122,9 @@ func (p *Proxy) Run(ctx context.Context) error {
 // readSSE returns errors when the SSE stream ends unexpectedly — silent EOF
 // after the connection was successfully established means the daemon went
 // away, and the parent client deserves to see it as a transport failure
-// rather than a clean exit.
-func (p *Proxy) readSSE(body io.Reader, endpointCh chan<- string, once *sync.Once) error {
+// rather than a clean exit. lastSeen is updated on every successful read so
+// the outer watchdog can detect silent transport hangs.
+func (p *Proxy) readSSE(body io.Reader, endpointCh chan<- string, once *sync.Once, lastSeen *atomic.Int64) error {
 	reader := bufio.NewReaderSize(body, 64*1024)
 	var event, data strings.Builder
 	flush := func() {
@@ -116,6 +146,9 @@ func (p *Proxy) readSSE(body io.Reader, endpointCh chan<- string, once *sync.Onc
 	}
 	for {
 		line, err := reader.ReadString('\n')
+		if lastSeen != nil {
+			lastSeen.Store(time.Now().UnixNano())
+		}
 		if err != nil {
 			flush()
 			if err == io.EOF {

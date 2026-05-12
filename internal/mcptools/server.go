@@ -1,6 +1,7 @@
 package mcptools
 
 import (
+	"context"
 	"encoding/json"
 	"fmt"
 	"log/slog"
@@ -229,4 +230,19 @@ func clampReadTimeout(ms int) int {
 		return maxReadTimeout
 	}
 	return ms
+}
+
+// execContext derives a timeout context for one-shot exec tools. By design
+// there is no "no timeout" option — long-running work belongs in a persistent
+// shell (ssh_shell_open / docker_shell_open), not in *_exec. Anything <= 0
+// (absent, zero, negative) falls back to the caller-supplied default. Values
+// above 1h are capped to defend against pathological input.
+func execContext(parent context.Context, timeoutMs, defaultMs int) (context.Context, context.CancelFunc) {
+	if timeoutMs <= 0 {
+		timeoutMs = defaultMs
+	}
+	if timeoutMs > 60*60*1000 {
+		timeoutMs = 60 * 60 * 1000
+	}
+	return context.WithTimeout(parent, time.Duration(timeoutMs)*time.Millisecond)
 }

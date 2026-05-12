@@ -23,7 +23,8 @@ func RegisterDocker(srv *server.MCPServer, st *State) {
 				"api_version":     map[string]any{"type": "string", "description": "Pin a Docker API version, e.g. \"1.41\". Default: negotiate."},
 				"key_path":        map[string]any{"type": "string", "description": "(ssh:// only) Path to SSH private key for tunneling auth."},
 				"key_passphrase":  map[string]any{"type": "string", "description": "(ssh:// only) Passphrase for an encrypted key, if any."},
-				"use_agent":       map[string]any{"type": "boolean", "description": "(ssh:// only) Authenticate via SSH_AUTH_SOCK."},
+				"use_agent":       map[string]any{"type": "boolean", "description": "(ssh:// only) Authenticate via ssh-agent. Reads SSH_AUTH_SOCK unless agent_socket is set."},
+				"agent_socket":    map[string]any{"type": "string", "description": "(ssh:// only) Explicit ssh-agent socket path (e.g. ~/Library/Group Containers/2BUA8C4S2C.com.1password/t/agent.sock). Supports leading ~/."},
 				"password":        map[string]any{"type": "string", "description": "(ssh:// only) Password auth."},
 				"known_hosts_path": map[string]any{"type": "string", "description": "(ssh:// only) Override ~/.ssh/known_hosts location."},
 				"ssh_insecure":    map[string]any{"type": "boolean", "description": "(ssh:// only) Skip SSH host key verification."},
@@ -149,7 +150,7 @@ func RegisterDocker(srv *server.MCPServer, st *State) {
 	), handleDockerRun(st))
 
 	srv.AddTool(mcp.NewTool("docker_exec",
-		mcp.WithDescription("Run a one-shot command in a container. The cmd is an argv array — each element is ONE argv entry; \"ls -la /tmp\" as a single string will NOT be parsed by a shell. To run shell-style, use [\"sh\", \"-c\", \"ls -la /tmp\"]. For interactive/stateful work use docker_shell_open instead."),
+		mcp.WithDescription("Run a one-shot command in a container. The cmd is an argv array — each element is ONE argv entry; \"ls -la /tmp\" as a single string will NOT be parsed by a shell. To run shell-style, use [\"sh\", \"-c\", \"ls -la /tmp\"]. Bounded by a 30-second timeout — for interactive/long-running work use docker_shell_open instead, which has no timeout. timeout_ms raises the per-call cap (max 1h)."),
 		mcp.WithString("host_id", mcp.Required()),
 		mcp.WithString("container", mcp.Required(), mcp.Description("Container id or name.")),
 		mcp.WithArray("cmd", mcp.Required(),
@@ -159,6 +160,7 @@ func RegisterDocker(srv *server.MCPServer, st *State) {
 		mcp.WithString("user", mcp.Description("UID, name, or UID:GID.")),
 		mcp.WithObject("env", mcp.Description("Environment variables as {KEY: value}.")),
 		mcp.WithString("stdin", mcp.Description("Data piped to the command's stdin.")),
+		mcp.WithNumber("timeout_ms", mcp.Description("Override the 30s default. Capped at 1h. On expiry the exec gets force-killed.")),
 	), handleDockerExec(st))
 }
 
@@ -405,6 +407,7 @@ type dockerExecArgs struct {
 	User       string            `json:"user,omitempty"`
 	Env        map[string]string `json:"env,omitempty"`
 	Stdin      string            `json:"stdin,omitempty"`
+	TimeoutMs  int               `json:"timeout_ms,omitempty"`
 }
 
 func handleDockerImageList(st *State) server.ToolHandlerFunc {
@@ -503,7 +506,9 @@ func handleDockerExec(st *State) server.ToolHandlerFunc {
 		if err != nil {
 			return resultErr(err)
 		}
-		res, err := h.Exec(ctx, args.Container, dockerx.ExecOptions{
+		cctx, cancel := execContext(ctx, args.TimeoutMs, 30_000)
+		defer cancel()
+		res, err := h.Exec(cctx, args.Container, dockerx.ExecOptions{
 			Cmd: args.Cmd, WorkingDir: args.WorkingDir, User: args.User,
 			Env: args.Env, Stdin: args.Stdin,
 		})

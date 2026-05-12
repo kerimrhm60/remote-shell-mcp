@@ -9,6 +9,7 @@ type ConnectSpec struct {
 	KeyPath       string `json:"key_path,omitempty"`
 	KeyPassphrase string `json:"key_passphrase,omitempty"`
 	UseAgent      bool   `json:"use_agent,omitempty"`
+	AgentSocket   string `json:"agent_socket,omitempty"`
 	Password      string `json:"password,omitempty"`
 	// KnownHostsPath / SSHInsecure apply only to ssh:// hosts.
 	KnownHostsPath string `json:"known_hosts_path,omitempty"`

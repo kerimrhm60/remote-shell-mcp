@@ -71,11 +71,12 @@ func RegisterSSH(srv *server.MCPServer, st *State) {
 	), handleSSHClone(st))
 
 	srv.AddTool(mcp.NewTool("ssh_exec",
-		mcp.WithDescription("Run a one-shot command on an SSH session. Each call uses a fresh channel — for stateful work (cd, env) use ssh_shell_* instead."),
+		mcp.WithDescription("Run a one-shot command on an SSH session. Each call uses a fresh channel and is bounded by a 30-second timeout — for anything long-running (builds, tails, deploys) open a persistent shell with ssh_shell_open instead, which has no timeout. timeout_ms raises the per-call cap (max 1h)."),
 		mcp.WithString("session_id", mcp.Required(), mcp.Description("Session id.")),
 		mcp.WithString("command", mcp.Required(), mcp.Description("Shell command to run.")),
 		mcp.WithObject("env", mcp.Description("Environment variables {KEY: value}. Many servers ignore Setenv unless AcceptEnv is configured.")),
 		mcp.WithString("stdin", mcp.Description("Optional data to write to the command's stdin.")),
+		mcp.WithNumber("timeout_ms", mcp.Description("Override the 30s default. Capped at 1h. On expiry the remote process gets SIGKILL and the channel is force-closed.")),
 	), handleSSHExec(st))
 }
 
@@ -171,6 +172,7 @@ type sshExecArgs struct {
 	Command   string            `json:"command"`
 	Env       map[string]string `json:"env,omitempty"`
 	Stdin     string            `json:"stdin,omitempty"`
+	TimeoutMs int               `json:"timeout_ms,omitempty"`
 }
 
 func handleSSHExec(st *State) server.ToolHandlerFunc {
@@ -183,7 +185,9 @@ func handleSSHExec(st *State) server.ToolHandlerFunc {
 		if err != nil {
 			return resultErr(err)
 		}
-		res, err := s.Exec(ctx, args.Command, sshx.ExecOptions{Env: args.Env, Stdin: args.Stdin})
+		cctx, cancel := execContext(ctx, args.TimeoutMs, 30_000)
+		defer cancel()
+		res, err := s.Exec(cctx, args.Command, sshx.ExecOptions{Env: args.Env, Stdin: args.Stdin})
 		if err != nil {
 			return resultErr(err)
 		}

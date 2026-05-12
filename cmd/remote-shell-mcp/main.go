@@ -80,7 +80,10 @@ func main() {
 	// restarted, crashed, etc.), don't exit — the parent MCP client would
 	// just re-spawn us in a tight loop. Instead, wait with backoff and
 	// re-attach. Only exit on context cancel (signal) or repeated failure.
-	backoff := []time.Duration{500 * time.Millisecond, 1 * time.Second, 2 * time.Second, 5 * time.Second, 10 * time.Second}
+	// Tight initial reconnect window so a daemon restart isn't visible to
+	// the parent MCP client as a multi-second stall; ramp if the daemon
+	// stays unreachable.
+	backoff := []time.Duration{200 * time.Millisecond, 500 * time.Millisecond, 1 * time.Second, 2 * time.Second, 5 * time.Second}
 	attempt := 0
 	// If a Run() call survives this long, treat the bridge as healthy and
 	// reset the backoff index. Without this, after a few flaps every

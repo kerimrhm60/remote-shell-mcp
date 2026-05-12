@@ -73,6 +73,7 @@ func dialDockerOverSSH(rawURL string, spec ConnectSpec) (*hostConn, error) {
 		KeyPath:       spec.KeyPath,
 		KeyPassphrase: spec.KeyPassphrase,
 		UseAgent:      spec.UseAgent,
+		AgentSocket:   spec.AgentSocket,
 		Password:      spec.Password,
 	}
 	methods, authClosers, err := auth.Build()
@@ -90,6 +91,14 @@ func dialDockerOverSSH(rawURL string, spec ConnectSpec) (*hostConn, error) {
 		Auth:            methods,
 		HostKeyCallback: hostKey,
 		Timeout:         15 * time.Second,
+	}
+	// Mirror sshx.dialFinal: derive HostKeyAlgorithms from known_hosts so we
+	// don't fail with a spurious "key mismatch" when the server picks a host
+	// key type we have an entry for under a different name (e.g. IP-only).
+	if !spec.SSHInsecure {
+		if algos := sshx.HostKeyAlgorithmsFor(spec.KnownHostsPath, hostname); len(algos) > 0 {
+			sshCfg.HostKeyAlgorithms = algos
+		}
 	}
 	sc, err := ssh.Dial("tcp", addr, sshCfg)
 	if err != nil {
