@@ -53,20 +53,30 @@ func dialFinal(spec ConnectSpec) (*ssh.Client, []*ssh.Client, string, error) {
 	if timeout == 0 {
 		timeout = 15 * time.Second
 	}
-	cfg := &ssh.ClientConfig{
-		User:            spec.User,
-		Auth:            methods,
-		HostKeyCallback: hostKey,
-		Timeout:         timeout,
-	}
-
 	jumpClients, err := dialJumpChain(spec.JumpHosts)
 	if err != nil {
 		return nil, nil, "", err
 	}
 
+	// Per-address dial: derive HostKeyAlgorithms from the user's known_hosts
+	// for that specific host so the server can't present a key type we have
+	// no entry for and trip a spurious "key mismatch".
 	var lastErr error
 	for _, addr := range addrs {
+		cfg := &ssh.ClientConfig{
+			User:            spec.User,
+			Auth:            methods,
+			HostKeyCallback: hostKey,
+			Timeout:         timeout,
+		}
+		if !spec.Insecure {
+			host, _, splitErr := net.SplitHostPort(addr)
+			if splitErr == nil {
+				if algos := HostKeyAlgorithmsFor(spec.KnownHostsPath, host); len(algos) > 0 {
+					cfg.HostKeyAlgorithms = algos
+				}
+			}
+		}
 		client, err := dialThrough(jumpClients, addr, cfg)
 		if err == nil {
 			return client, jumpClients, addr, nil

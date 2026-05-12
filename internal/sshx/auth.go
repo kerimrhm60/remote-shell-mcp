@@ -101,6 +101,79 @@ func (a AuthSpec) Build() ([]ssh.AuthMethod, closerList, error) {
 }
 
 
+// HostKeyAlgorithmsFor returns the host-key algorithm names that the user's
+// known_hosts file has entries for, so we can advertise only those. Without
+// this, the server may present (say) an RSA key for a host we only have an
+// ed25519 entry for, and the knownhosts callback errors with "key mismatch"
+// even though the same hostname has the same key the user is happy with
+// from their CLI. Returns nil if the file is missing or has no matching
+// entries (caller should leave HostKeyAlgorithms unset → Go's defaults).
+func HostKeyAlgorithmsFor(knownHostsPath, host string) []string {
+	if insecureModeEnabled := host == ""; insecureModeEnabled {
+		return nil
+	}
+	if knownHostsPath == "" {
+		home, err := os.UserHomeDir()
+		if err != nil {
+			return nil
+		}
+		knownHostsPath = home + "/.ssh/known_hosts"
+	}
+	data, err := os.ReadFile(knownHostsPath)
+	if err != nil {
+		return nil
+	}
+	seen := map[string]struct{}{}
+	rest := data
+	for len(rest) > 0 {
+		_, hosts, pubKey, _, next, err := ssh.ParseKnownHosts(rest)
+		rest = next
+		if err != nil {
+			// Bad line — stop trying to recover; if the file is fully
+			// unreadable we'd rather fall back to default algos than guess.
+			break
+		}
+		if pubKey == nil {
+			continue
+		}
+		for _, h := range hosts {
+			if knownHostsHostMatches(h, host) {
+				seen[pubKey.Type()] = struct{}{}
+				break
+			}
+		}
+	}
+	out := make([]string, 0, len(seen))
+	for t := range seen {
+		out = append(out, t)
+	}
+	return out
+}
+
+// knownHostsHostMatches handles the plaintext patterns OpenSSH writes:
+//
+//	host
+//	[host]:port
+//	host,otherhost,…
+//
+// Hashed entries (|1|salt|hash) are skipped — the user's file is plaintext
+// in practice. If someone needs hashed-only support we can plumb it later.
+func knownHostsHostMatches(pattern, host string) bool {
+	if pattern == "" {
+		return false
+	}
+	if strings.HasPrefix(pattern, "|") {
+		return false // hashed; out of scope for now
+	}
+	// "[host]:port" — extract inner host.
+	if strings.HasPrefix(pattern, "[") {
+		if end := strings.IndexByte(pattern, ']'); end > 0 {
+			return pattern[1:end] == host
+		}
+	}
+	return pattern == host
+}
+
 func HostKeyCallback(insecure bool, knownHostsPath string) (ssh.HostKeyCallback, error) {
 	if insecure {
 		return ssh.InsecureIgnoreHostKey(), nil
