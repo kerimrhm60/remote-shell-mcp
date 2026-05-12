@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"os"
 	"sync"
 	"time"
 )
@@ -21,8 +22,15 @@ func (m *Manager) Connect(id string, spec ConnectSpec) (*Session, error) {
 	if id == "" {
 		return nil, errors.New("session id is required")
 	}
+	// Fill blanks from ~/.ssh/config (like the `ssh` CLI). Explicit fields
+	// always win — see resolveFromSSHConfig.
+	resolveFromSSHConfig(&spec)
 	if spec.User == "" {
-		return nil, errors.New("user is required")
+		if u := os.Getenv("USER"); u != "" {
+			spec.User = u
+		} else {
+			return nil, errors.New("user is required (not in spec, not in ssh_config, not in $USER)")
+		}
 	}
 
 	m.mu.Lock()

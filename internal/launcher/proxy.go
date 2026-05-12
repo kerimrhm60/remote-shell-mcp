@@ -22,6 +22,13 @@ type Proxy struct {
 	Stdout     io.Writer
 	Stderr     io.Writer
 	HTTPClient *http.Client
+
+	// Lines, if non-nil, is consumed instead of Stdin. The launcher's main
+	// loop reads stdin once and feeds every proxy attempt from the same
+	// channel so reconnects don't spawn duplicate readers fighting over
+	// os.Stdin's bytes. Each value is a single newline-terminated JSON-RPC
+	// message. Close the channel to signal stdin EOF.
+	Lines <-chan []byte
 }
 
 func (p *Proxy) Run(ctx context.Context) error {
@@ -141,10 +148,6 @@ func (p *Proxy) readSSE(body io.Reader, endpointCh chan<- string, once *sync.Onc
 }
 
 func (p *Proxy) readStdin(ctx context.Context, postURL string) error {
-	// MCP responses can be arbitrarily large (file reads, resource contents,
-	// big tools/list payloads). Use a Reader with ReadBytes('\n'), no limit.
-	r := bufio.NewReaderSize(p.Stdin, 64*1024)
-
 	// POSTs are dispatched in parallel goroutines so a slow daemon handler
 	// doesn't block subsequent requests. Order doesn't matter on the POST
 	// channel — JSON-RPC ids correlate responses received via SSE.
@@ -162,32 +165,12 @@ func (p *Proxy) readStdin(ctx context.Context, postURL string) error {
 		})
 	}
 
-	// Stdin is a blocking syscall; run it on its own goroutine so the main
-	// loop can observe fatal/ctx signals immediately.
-	lineCh := make(chan []byte, 16)
-	readDoneCh := make(chan error, 1)
-	go func() {
-		defer close(lineCh)
-		for {
-			line, err := r.ReadBytes('\n')
-			if len(bytes.TrimSpace(line)) > 0 {
-				buf := append([]byte(nil), line...)
-				select {
-				case lineCh <- buf:
-				case <-ctx.Done():
-					readDoneCh <- ctx.Err()
-					return
-				case <-fatalCh:
-					readDoneCh <- nil
-					return
-				}
-			}
-			if err != nil {
-				readDoneCh <- err
-				return
-			}
-		}
-	}()
+	// Pull lines from the launcher-owned channel if the caller plumbed one
+	// (production path); otherwise spawn a local reader (single-shot use).
+	// Keeping a single shared reader across reconnects avoids duplicate
+	// goroutines fighting over os.Stdin's bytes after a daemon flap.
+	lineCh, readDoneCh, stopLocal := p.lineSource(ctx, fatalCh)
+	defer stopLocal()
 
 	dispatch := func(payload []byte) {
 		wg.Add(1)
@@ -236,6 +219,77 @@ func (p *Proxy) readStdin(ctx context.Context, postURL string) error {
 			dispatch(payload)
 		}
 	}
+}
+
+// lineSource returns a read-only channel of JSON-RPC lines from either the
+// shared launcher-owned source (p.Lines) or a per-call local stdin reader.
+// readDoneCh fires once with an EOF/error signal; stopLocal cancels the local
+// reader if we own it (no-op for the shared case).
+func (p *Proxy) lineSource(ctx context.Context, fatalCh <-chan struct{}) (<-chan []byte, <-chan error, func()) {
+	if p.Lines != nil {
+		// Adapter: a closed Lines channel becomes a single nil readDoneCh
+		// signal so the main loop can return cleanly. We can't observe EOF
+		// from the source without consuming a value, so we do it on the
+		// reading side via a wrapper.
+		readDoneCh := make(chan error, 1)
+		out := make(chan []byte, 16)
+		go func() {
+			defer close(out)
+			for {
+				select {
+				case line, ok := <-p.Lines:
+					if !ok {
+						readDoneCh <- io.EOF
+						return
+					}
+					select {
+					case out <- line:
+					case <-ctx.Done():
+						readDoneCh <- ctx.Err()
+						return
+					case <-fatalCh:
+						readDoneCh <- nil
+						return
+					}
+				case <-ctx.Done():
+					readDoneCh <- ctx.Err()
+					return
+				case <-fatalCh:
+					readDoneCh <- nil
+					return
+				}
+			}
+		}()
+		return out, readDoneCh, func() {}
+	}
+
+	// Local-reader fallback used by tests / one-shot callers.
+	r := bufio.NewReaderSize(p.Stdin, 64*1024)
+	lineCh := make(chan []byte, 16)
+	readDoneCh := make(chan error, 1)
+	go func() {
+		defer close(lineCh)
+		for {
+			line, err := r.ReadBytes('\n')
+			if len(bytes.TrimSpace(line)) > 0 {
+				buf := append([]byte(nil), line...)
+				select {
+				case lineCh <- buf:
+				case <-ctx.Done():
+					readDoneCh <- ctx.Err()
+					return
+				case <-fatalCh:
+					readDoneCh <- nil
+					return
+				}
+			}
+			if err != nil {
+				readDoneCh <- err
+				return
+			}
+		}
+	}()
+	return lineCh, readDoneCh, func() {}
 }
 
 func (p *Proxy) postOne(ctx context.Context, postURL string, payload []byte) error {

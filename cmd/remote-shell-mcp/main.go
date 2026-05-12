@@ -1,6 +1,7 @@
 package main
 
 import (
+	"bufio"
 	"context"
 	"errors"
 	"flag"
@@ -51,6 +52,30 @@ func main() {
 		cancel()
 	}()
 
+	// Hoist stdin reading into a SINGLE long-lived goroutine. Without this
+	// every Proxy.Run() spawned a fresh stdin reader; after a daemon flap
+	// + reconnect, two goroutines would race for bytes from os.Stdin and
+	// half the parent's writes would be eaten by the dead reader.
+	linesCh := make(chan []byte, 32)
+	go func() {
+		defer close(linesCh)
+		r := bufio.NewReaderSize(os.Stdin, 64*1024)
+		for {
+			line, err := r.ReadBytes('\n')
+			if len(line) > 0 {
+				buf := append([]byte(nil), line...)
+				select {
+				case linesCh <- buf:
+				case <-ctx.Done():
+					return
+				}
+			}
+			if err != nil {
+				return // EOF or read error → channel closes via defer
+			}
+		}
+	}()
+
 	// Reconnect-on-failure loop: if the daemon's SSE stream dies (daemon was
 	// restarted, crashed, etc.), don't exit — the parent MCP client would
 	// just re-spawn us in a tight loop. Instead, wait with backoff and
@@ -82,7 +107,7 @@ func main() {
 		p := &launcher.Proxy{
 			BaseURL: "http://" + *addr,
 			Token:   tok,
-			Stdin:   os.Stdin,
+			Lines:   linesCh,
 			Stdout:  os.Stdout,
 			Stderr:  os.Stderr,
 		}

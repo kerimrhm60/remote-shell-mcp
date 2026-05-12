@@ -24,7 +24,8 @@ func RegisterSSH(srv *server.MCPServer, st *State) {
 					"properties": map[string]any{
 						"key_path":       map[string]any{"type": "string", "description": "Path to private key on the daemon host."},
 						"key_passphrase": map[string]any{"type": "string", "description": "Passphrase for the private key, if any."},
-						"use_agent":      map[string]any{"type": "boolean", "description": "Use ssh-agent via SSH_AUTH_SOCK on the daemon."},
+						"use_agent":      map[string]any{"type": "boolean", "description": "Use ssh-agent for auth. Reads SSH_AUTH_SOCK unless agent_socket is set."},
+						"agent_socket":   map[string]any{"type": "string", "description": "Explicit path to an ssh-agent unix socket. Required when SSH_AUTH_SOCK isn't propagated to the daemon (e.g. 1Password agent at ~/Library/Group Containers/2BUA8C4S2C.com.1password/t/agent.sock). Supports leading ~/."},
 						"password":       map[string]any{"type": "string", "description": "Password auth (not persisted across daemon restart)."},
 					},
 				},

@@ -6,6 +6,7 @@ import (
 	"io"
 	"net"
 	"os"
+	"strings"
 
 	"golang.org/x/crypto/ssh"
 	"golang.org/x/crypto/ssh/agent"
@@ -16,7 +17,13 @@ type AuthSpec struct {
 	KeyPath       string `json:"key_path,omitempty"`
 	KeyPassphrase string `json:"key_passphrase,omitempty"`
 	UseAgent      bool   `json:"use_agent,omitempty"`
-	Password      string `json:"password,omitempty"`
+	// AgentSocket overrides the default $SSH_AUTH_SOCK lookup. Useful when
+	// the daemon was started without the env var (e.g. spawned by an MCP
+	// host that doesn't propagate user env), or when you want to point at
+	// a specific agent like 1Password's (~/Library/.../1password/t/agent.sock)
+	// or `gpg-agent --enable-ssh-support`.
+	AgentSocket string `json:"agent_socket,omitempty"`
+	Password    string `json:"password,omitempty"`
 }
 
 // closerList lets callers cleanly release auth-time resources (e.g. the
@@ -38,9 +45,19 @@ func (a AuthSpec) Build() ([]ssh.AuthMethod, closerList, error) {
 	var closers closerList
 
 	if a.UseAgent {
-		sock := os.Getenv("SSH_AUTH_SOCK")
+		sock := a.AgentSocket
 		if sock == "" {
-			return nil, nil, errors.New("ssh-agent requested but SSH_AUTH_SOCK is empty")
+			sock = os.Getenv("SSH_AUTH_SOCK")
+		}
+		if sock == "" {
+			return nil, nil, errors.New("ssh-agent requested but neither agent_socket nor SSH_AUTH_SOCK is set")
+		}
+		// Allow `~` in the path so callers can pass "~/Library/.../agent.sock"
+		// without expanding it themselves.
+		if strings.HasPrefix(sock, "~/") {
+			if home, err := os.UserHomeDir(); err == nil {
+				sock = home + sock[1:]
+			}
 		}
 		conn, err := net.Dial("unix", sock)
 		if err != nil {

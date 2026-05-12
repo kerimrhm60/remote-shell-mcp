@@ -43,11 +43,12 @@ type execResp struct {
 
 func sshSpec(port int) map[string]any {
 	return map[string]any{
-		"user":      sshUser,
-		"addresses": []string{fmt.Sprintf("127.0.0.1:%d", port)},
-		"auth":      map[string]any{"password": sshPassword},
-		"insecure":  true,
-		"timeout":   "10s",
+		"user":               sshUser,
+		"addresses":          []string{fmt.Sprintf("127.0.0.1:%d", port)},
+		"auth":               map[string]any{"password": sshPassword},
+		"insecure":           true,
+		"timeout":            "10s",
+		"disable_ssh_config": true,
 	}
 }
 
