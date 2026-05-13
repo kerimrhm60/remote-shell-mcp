@@ -16,11 +16,17 @@ VERSION="latest"
 INSTALL_DIR=""
 RUN_SETUP=1
 SETUP_YES=0
+# BASE_URL overrides the GitHub release URL prefix. With it, the asset is
+# fetched from "$BASE_URL/$asset" instead of the github.com release page.
+# CI uses this to point the installer at locally-built snapshot artifacts;
+# end users should never need it.
+BASE_URL=""
 
 while [ "${1-}" != "" ]; do
   case "$1" in
     --version)     VERSION="$2"; shift 2 ;;
     --dir)         INSTALL_DIR="$2"; shift 2 ;;
+    --base-url)    BASE_URL="$2"; shift 2 ;;
     --no-setup)    RUN_SETUP=0; shift ;;
     --yes|-y)      SETUP_YES=1; shift ;;
     --help|-h)
@@ -57,7 +63,9 @@ mkdir -p "$INSTALL_DIR"
 echo "Install dir: $INSTALL_DIR"
 
 # --- resolve version -------------------------------------------------------
-if [ "$VERSION" = "latest" ]; then
+# Only resolve `latest` against GitHub when BASE_URL isn't overridden. With a
+# local base URL we don't have a "latest" concept; the caller passes --version.
+if [ -z "$BASE_URL" ] && [ "$VERSION" = "latest" ]; then
   echo "Resolving latest release..."
   redirect=$(curl -fsSL -o /dev/null -w "%{url_effective}" "https://github.com/$REPO/releases/latest")
   VERSION="${redirect##*/}"
@@ -70,7 +78,12 @@ echo "Version: $VERSION"
 
 # --- download + extract ----------------------------------------------------
 asset="remote-shell-mcp_${VERSION#v}_${os}_${arch}.tar.gz"
-url="https://github.com/$REPO/releases/download/$VERSION/$asset"
+if [ -n "$BASE_URL" ]; then
+  prefix="${BASE_URL%/}"
+else
+  prefix="https://github.com/$REPO/releases/download/$VERSION"
+fi
+url="$prefix/$asset"
 tmp=$(mktemp -d)
 trap 'rm -rf "$tmp"' EXIT
 
@@ -82,7 +95,7 @@ if ! curl -fsSL -o "$tmp/pkg.tar.gz" "$url"; then
 fi
 
 # Optional checksum verification.
-if curl -fsSL -o "$tmp/checksums.txt" "https://github.com/$REPO/releases/download/$VERSION/checksums.txt" 2>/dev/null; then
+if curl -fsSL -o "$tmp/checksums.txt" "$prefix/checksums.txt" 2>/dev/null; then
   expected=$(grep -F "  $asset" "$tmp/checksums.txt" | awk '{print $1}' || true)
   if [ -n "$expected" ]; then
     if command -v sha256sum >/dev/null 2>&1; then

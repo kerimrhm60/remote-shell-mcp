@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"io"
 	"os"
+	"path/filepath"
 	"strings"
 )
 
@@ -37,21 +38,11 @@ func Detect(clients []Client) []DetectedClient {
 			continue
 		}
 		// Parent dir present → app installed but no MCP entries yet.
-		if _, err := os.Stat(parentDir(path)); err == nil {
+		if _, err := os.Stat(filepath.Dir(path)); err == nil {
 			out = append(out, DetectedClient{Client: c, Path: path, Exists: false})
 		}
 	}
 	return out
-}
-
-func parentDir(p string) string {
-	if i := strings.LastIndex(p, "/"); i >= 0 {
-		return p[:i]
-	}
-	if i := strings.LastIndex(p, "\\"); i >= 0 {
-		return p[:i]
-	}
-	return "."
 }
 
 // Options controls Run() behavior.

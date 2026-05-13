@@ -6,11 +6,24 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"runtime"
 	"strings"
 	"time"
 
 	"github.com/jaenster/remote-shell-mcp/internal/daemon"
 )
+
+// daemonExeName is the daemon binary's filename including any platform suffix.
+// exec.LookPath honors PATHEXT on Windows, so LookPath("remote-shell-mcpd")
+// finds remote-shell-mcpd.exe transparently — but a manual os.Stat alongside
+// the launcher does NOT, so explicit ".exe" is required for the same-dir
+// probe below.
+var daemonExeName = func() string {
+	if runtime.GOOS == "windows" {
+		return "remote-shell-mcpd.exe"
+	}
+	return "remote-shell-mcpd"
+}()
 
 func EnsureDaemon(addr, daemonBinary string, extraArgs []string) error {
 	// Use a finite probe so non-default unreachable addresses don't block
@@ -58,13 +71,13 @@ func resolveDaemonBinary(override string) (string, error) {
 		return "", err
 	}
 	dir := filepath.Dir(exe)
-	candidate := filepath.Join(dir, "remote-shell-mcpd")
+	candidate := filepath.Join(dir, daemonExeName)
 	if _, err := os.Stat(candidate); err == nil {
 		return candidate, nil
 	}
 	base := strings.TrimSuffix(filepath.Base(exe), filepath.Ext(exe))
 	if base == "remote-shell-mcp" {
-		candidate = filepath.Join(dir, "remote-shell-mcpd")
+		candidate = filepath.Join(dir, daemonExeName)
 		if _, err := os.Stat(candidate); err == nil {
 			return candidate, nil
 		}
