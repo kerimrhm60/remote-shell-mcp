@@ -7,6 +7,7 @@ import (
 	"context"
 	"crypto/ed25519"
 	"crypto/rand"
+	"encoding/json"
 	"encoding/pem"
 	"fmt"
 	"net"
@@ -217,19 +218,19 @@ func PickFreePort(t *testing.T) int {
 }
 
 type Daemon struct {
-	cmd       *exec.Cmd
-	addr      string
-	tokenPath string
-	stop      context.CancelFunc
-	stderr    *bytes.Buffer
+	cmd        *exec.Cmd
+	addr       string
+	handlePath string
+	stop       context.CancelFunc
+	stderr     *bytes.Buffer
 }
 
 type DaemonOpts struct {
-	StatePath string
-	LockPath  string
-	TokenPath string
-	Env       []string
-	Format    string // override -format flag; empty = json (test default)
+	StatePath  string
+	LockPath   string
+	HandlePath string
+	Env        []string
+	Format     string // override -format flag; empty = json (test default)
 }
 
 func StartDaemon(t *testing.T, daemonBin string) *Daemon {
@@ -248,8 +249,8 @@ func StartDaemonWith(t *testing.T, daemonBin string, opts DaemonOpts) *Daemon {
 	if opts.LockPath == "" {
 		opts.LockPath = filepath.Join(dir, "daemon.lock")
 	}
-	if opts.TokenPath == "" {
-		opts.TokenPath = filepath.Join(dir, "daemon.token")
+	if opts.HandlePath == "" {
+		opts.HandlePath = filepath.Join(dir, "daemon.json")
 	}
 
 	ctx, cancel := context.WithCancel(context.Background())
@@ -257,7 +258,7 @@ func StartDaemonWith(t *testing.T, daemonBin string, opts DaemonOpts) *Daemon {
 		"-addr", addr,
 		"-state", opts.StatePath,
 		"-lock", opts.LockPath,
-		"-token", opts.TokenPath,
+		"-handle", opts.HandlePath,
 		"-log", "text",
 		// The e2e suite parses tool responses as JSON. Pin the format
 		// regardless of the new daemon default so tests stay deterministic.
@@ -276,7 +277,7 @@ func StartDaemonWith(t *testing.T, daemonBin string, opts DaemonOpts) *Daemon {
 		cancel()
 		t.Fatalf("start daemon: %v", err)
 	}
-	d := &Daemon{cmd: cmd, addr: addr, tokenPath: opts.TokenPath, stop: cancel, stderr: &stderr}
+	d := &Daemon{cmd: cmd, addr: addr, handlePath: opts.HandlePath, stop: cancel, stderr: &stderr}
 	if err := waitForHTTP(addr); err != nil {
 		t.Logf("daemon stderr:\n%s", stderr.String())
 		d.Stop()
@@ -285,16 +286,23 @@ func StartDaemonWith(t *testing.T, daemonBin string, opts DaemonOpts) *Daemon {
 	return d
 }
 
-func (d *Daemon) TokenPath() string { return d.tokenPath }
+func (d *Daemon) HandlePath() string { return d.handlePath }
 
-// daemon_ReadToken is a test-only wrapper to avoid importing internal/daemon
-// from a build-tagged file (the internal import is allowed but adds noise).
-func daemon_ReadToken(path string) (string, error) {
+// daemon_ReadHandle is a test-only wrapper that reads the bearer token out of
+// the daemon's handle file. We hand-parse the JSON (rather than importing
+// internal/daemon) to keep this build-tagged file's dependencies thin.
+func daemon_ReadHandle(path string) (string, error) {
 	data, err := os.ReadFile(path)
 	if err != nil {
 		return "", err
 	}
-	return strings.TrimSpace(string(data)), nil
+	var h struct {
+		Token string `json:"token"`
+	}
+	if err := json.Unmarshal(data, &h); err != nil {
+		return "", err
+	}
+	return strings.TrimSpace(h.Token), nil
 }
 
 func (d *Daemon) Addr() string { return d.addr }

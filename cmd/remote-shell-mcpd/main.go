@@ -5,6 +5,7 @@ import (
 	"flag"
 	"fmt"
 	"log/slog"
+	"net"
 	"net/http"
 	"os"
 	"os/signal"
@@ -22,16 +23,20 @@ import (
 )
 
 const (
-	defaultAddr = "127.0.0.1:7800"
+	// Default addr binds the loopback to a kernel-picked free port. The actual
+	// bound address is written to daemon.json so the launcher can find us
+	// without hard-coding any port — sidesteps the well-known-port conflict
+	// (the previous default, 7800, is JGroups/JBoss).
+	defaultAddr = "127.0.0.1:0"
 	serverName  = "remote-shell-mcp"
 	serverVer   = "0.1.0"
 )
 
 func main() {
-	addr := flag.String("addr", envOr("REMOTE_SHELL_MCP_ADDR", defaultAddr), "Bind address for the SSE MCP server (host:port).")
+	addr := flag.String("addr", envOr("REMOTE_SHELL_MCP_ADDR", defaultAddr), "Bind address for the SSE MCP server (host:port). Port 0 means \"pick a free port\".")
 	statePath := flag.String("state", envOr("REMOTE_SHELL_MCP_STATE", ""), "Path to state.json (default: $XDG_CONFIG_HOME/remote-shell-mcp/state.json).")
 	lockPath := flag.String("lock", envOr("REMOTE_SHELL_MCP_LOCK", ""), "Path to daemon lock file.")
-	tokenPath := flag.String("token", envOr("REMOTE_SHELL_MCP_TOKEN", ""), "Path to the auth token file. Daemon writes a fresh random token here on startup.")
+	handlePath := flag.String("handle", envOr("REMOTE_SHELL_MCP_HANDLE", ""), "Path to the handle file. Daemon writes {addr,token,pid} here after binding so the launcher can find it.")
 	logFmt := flag.String("log", envOr("REMOTE_SHELL_MCP_LOG", "text"), "Log format: text or json.")
 	outFmt := flag.String("format", envOr("REMOTE_SHELL_MCP_FORMAT", "toon"), "Tool-result output format: toon (default) or json. TOON is ~30-50% smaller for arrays of uniform objects (docker_containers, ssh_file_list, etc.) — see https://github.com/toon-format/spec.")
 	flag.Parse()
@@ -42,7 +47,7 @@ func main() {
 		os.Exit(2)
 	}
 
-	defLock, defState, defToken, err := daemon.DefaultPaths()
+	defLock, defState, defHandle, err := daemon.DefaultPaths()
 	if err != nil {
 		fmt.Fprintln(os.Stderr, "config dir:", err)
 		os.Exit(1)
@@ -53,8 +58,8 @@ func main() {
 	if *statePath == "" {
 		*statePath = defState
 	}
-	if *tokenPath == "" {
-		*tokenPath = defToken
+	if *handlePath == "" {
+		*handlePath = defHandle
 	}
 	_ = os.MkdirAll(filepath.Dir(*lockPath), 0o700)
 
@@ -78,11 +83,28 @@ func main() {
 		log.Error("generate token", "err", err)
 		os.Exit(1)
 	}
-	if err := daemon.WriteToken(*tokenPath, token); err != nil {
-		log.Error("write token", "err", err, "path", *tokenPath)
+
+	// Bind the listener up-front so we know the actual port before we publish
+	// the handle. Anything launched after we write daemon.json can trust the
+	// addr in there; nothing can race us, because the handle never points at
+	// a port we haven't already bound.
+	ln, err := net.Listen("tcp", *addr)
+	if err != nil {
+		log.Error("listen", "err", err, "addr", *addr)
 		os.Exit(1)
 	}
-	defer os.Remove(*tokenPath)
+	boundAddr := ln.Addr().String()
+
+	if err := daemon.WriteHandle(*handlePath, daemon.Handle{
+		Addr:  boundAddr,
+		Token: token,
+		PID:   os.Getpid(),
+	}); err != nil {
+		_ = ln.Close()
+		log.Error("write handle", "err", err, "path", *handlePath)
+		os.Exit(1)
+	}
+	defer os.Remove(*handlePath)
 
 	store, err := state.NewStore(*statePath)
 	if err != nil {
@@ -118,7 +140,6 @@ func main() {
 	mux.Handle("/", sseServer)
 	authed := daemon.AuthMiddleware(token, mux)
 	httpSrv := &http.Server{
-		Addr:    *addr,
 		Handler: authed,
 		// Defend against slowloris from a local process holding a connection
 		// open without sending headers. SSE handlers explicitly want long-lived
@@ -130,9 +151,9 @@ func main() {
 
 	errCh := make(chan error, 1)
 	go func() {
-		log.Info("listening", "addr", *addr, "sse", "/sse", "message", "/message", "rpc", "/rpc",
-			"state", store.Path(), "token", *tokenPath, "format", string(format))
-		errCh <- httpSrv.ListenAndServe()
+		log.Info("listening", "addr", boundAddr, "sse", "/sse", "message", "/message", "rpc", "/rpc",
+			"state", store.Path(), "handle", *handlePath, "format", string(format))
+		errCh <- httpSrv.Serve(ln)
 	}()
 
 	sigCh := make(chan os.Signal, 1)

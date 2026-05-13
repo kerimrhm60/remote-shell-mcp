@@ -42,20 +42,10 @@ func main() {
 		}
 	}
 
-	addr := flag.String("addr", envOr("REMOTE_SHELL_MCP_ADDR", "127.0.0.1:7800"), "Daemon SSE address (host:port).")
 	daemonBin := flag.String("daemon-binary", envOr("REMOTE_SHELL_MCP_DAEMON", ""), "Path to the remote-shell-mcpd binary. If empty, looks on PATH and next to this binary.")
-	tokenPath := flag.String("token", envOr("REMOTE_SHELL_MCP_TOKEN", ""), "Path to the daemon's auth token file. Defaults to $XDG_CONFIG_HOME/remote-shell-mcp/daemon.token.")
+	handlePath := flag.String("handle", envOr("REMOTE_SHELL_MCP_HANDLE", ""), "Path to the daemon handle file (default: $XDG_CONFIG_HOME/remote-shell-mcp/daemon.json). Tests and power-users override; production should leave this empty.")
 	noSpawn := flag.Bool("no-spawn", false, "Do not start the daemon; fail if it is not already running.")
 	flag.Parse()
-
-	if *tokenPath == "" {
-		_, _, def, err := daemon.DefaultPaths()
-		if err != nil {
-			fmt.Fprintln(os.Stderr, "config dir:", err)
-			os.Exit(1)
-		}
-		*tokenPath = def
-	}
 
 	ctx, cancel := context.WithCancel(context.Background())
 	sigCh := make(chan os.Signal, 1)
@@ -104,25 +94,17 @@ func main() {
 	// became healthy in between.
 	const stableThreshold = 30 * time.Second
 	for ctx.Err() == nil {
-		if !*noSpawn {
-			if err := launcher.EnsureDaemon(*addr, *daemonBin, nil); err != nil {
-				fmt.Fprintln(os.Stderr, "ensure daemon:", err)
-				sleepWithCtx(ctx, backoff[min(attempt, len(backoff)-1)])
-				attempt++
-				continue
-			}
-		}
-		tok, err := waitForToken(*tokenPath, 5*time.Second)
+		handle, err := resolveDaemonHandle(*daemonBin, *handlePath, *noSpawn)
 		if err != nil {
-			fmt.Fprintln(os.Stderr, "read token:", err)
+			fmt.Fprintln(os.Stderr, "ensure daemon:", err)
 			sleepWithCtx(ctx, backoff[min(attempt, len(backoff)-1)])
 			attempt++
 			continue
 		}
 
 		p := &launcher.Proxy{
-			BaseURL: "http://" + *addr,
-			Token:   tok,
+			BaseURL: "http://" + handle.Addr,
+			Token:   handle.Token,
 			Lines:   linesCh,
 			Stdout:  os.Stdout,
 			Stderr:  os.Stderr,
@@ -142,6 +124,24 @@ func main() {
 		sleepWithCtx(ctx, backoff[min(attempt, len(backoff)-1)])
 		attempt++
 	}
+}
+
+// resolveDaemonHandle wraps EnsureDaemon for both spawn-allowed and no-spawn
+// modes. In no-spawn we only read the existing handle; spawning is left to the
+// operator. An explicit handlePath (flag/env) overrides the default location —
+// used by e2e tests that put each daemon in a temp dir.
+func resolveDaemonHandle(daemonBin, handlePath string, noSpawn bool) (daemon.Handle, error) {
+	if handlePath == "" {
+		_, _, def, err := daemon.DefaultPaths()
+		if err != nil {
+			return daemon.Handle{}, err
+		}
+		handlePath = def
+	}
+	if noSpawn {
+		return daemon.ReadHandle(handlePath)
+	}
+	return launcher.EnsureDaemonAt(handlePath, daemonBin, nil)
 }
 
 // errStdinClosed is a sentinel that Proxy.Run currently doesn't return; it's
@@ -164,19 +164,6 @@ func min(a, b int) int {
 		return a
 	}
 	return b
-}
-
-func waitForToken(path string, total time.Duration) (string, error) {
-	deadline := time.Now().Add(total)
-	for {
-		if tok, err := daemon.ReadToken(path); err == nil && tok != "" {
-			return tok, nil
-		}
-		if time.Now().After(deadline) {
-			return "", fmt.Errorf("token file %s never appeared", path)
-		}
-		time.Sleep(100 * time.Millisecond)
-	}
 }
 
 func envOr(key, def string) string {

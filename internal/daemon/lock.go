@@ -78,7 +78,7 @@ func WaitUntilListening(addr string, total time.Duration) error {
 	return errors.New("timed out waiting for daemon to listen on " + addr)
 }
 
-func DefaultPaths() (lockPath, statePath, tokenPath string, err error) {
+func DefaultPaths() (lockPath, statePath, handlePath string, err error) {
 	cfg, err := os.UserConfigDir()
 	if err != nil {
 		return "", "", "", err
@@ -86,5 +86,5 @@ func DefaultPaths() (lockPath, statePath, tokenPath string, err error) {
 	dir := filepath.Join(cfg, "remote-shell-mcp")
 	return filepath.Join(dir, "daemon.lock"),
 		filepath.Join(dir, "state.json"),
-		filepath.Join(dir, "daemon.token"), nil
+		filepath.Join(dir, "daemon.json"), nil
 }

@@ -2,6 +2,13 @@
 
 All notable changes to remote-shell-mcp. Versions follow [Semantic Versioning](https://semver.org/).
 
+## v0.1.7 — 2026-05-13
+
+- **Daemon now picks a free port at startup** instead of hard-coding `127.0.0.1:7800`. The previous default was JGroups' well-known port (used by JBoss/Wildfly clustering) and could clash with anything from a local game server to a Cassandra dev cluster — symptom was a launcher that couldn't connect because something else already owned 7800. Daemon binds `127.0.0.1:0`, the kernel hands back a free port, and the actual `host:port` is written into `daemon.json` along with the bearer token and PID. The launcher reads the handle to know where to connect — no port assumptions on either side. `--addr` is still respected if you want to pin a specific port.
+- **Launcher self-heals on stale daemon state.** Previous symptom: if the daemon ended up listening on the port but `daemon.token` had been removed (or any other "process alive, auth file gone" half-state), every subsequent launcher invocation would fail with "token file never appeared" — *forever*, because `EnsureDaemon` saw a live listener and refused to respawn. The new flow probes the recorded address; if the handle is missing/corrupt or the daemon isn't responsive, the launcher SIGTERMs the PID in `daemon.lock`, waits for the port to free, escalates to SIGKILL if needed, and spawns fresh. Hosed daemons no longer wedge the MCP integration.
+- **Replaced `daemon.token` with `daemon.json`** (`{addr, token, pid}`). One source of truth for the launcher/daemon rendezvous; one defer to clean up. Atomic tmp-then-rename write so a partial file never gets observed.
+- New tests for the handle round-trip (perms 0600, atomic replace, refuses corrupt or incomplete files).
+
 ## v0.1.6 — 2026-05-13
 
 - **Windows is a first-class target now.** Daemon lock split into `lock_unix.go` (flock) and `lock_windows.go` (`LockFileEx` with `LOCKFILE_FAIL_IMMEDIATELY` — the moral equivalent of `flock(LOCK_EX|LOCK_NB)`). Same "already-running → error" semantics either way. Also fixed launcher's same-directory probe for the daemon binary to honor `.exe` on Windows (`exec.LookPath` already does this via PATHEXT, but a manual `os.Stat` does not).

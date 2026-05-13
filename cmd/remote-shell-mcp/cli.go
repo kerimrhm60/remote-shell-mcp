@@ -15,7 +15,6 @@ import (
 
 	toon "github.com/toon-format/toon-go"
 
-	"github.com/jaenster/remote-shell-mcp/internal/daemon"
 	"github.com/jaenster/remote-shell-mcp/internal/launcher"
 )
 
@@ -59,34 +58,18 @@ func runCLI(toolName string, args []string) int {
 		return 2
 	}
 
-	// Resolve daemon addr + token the same way the proxy does.
-	addr := envOr("REMOTE_SHELL_MCP_ADDR", "127.0.0.1:7800")
-	tokenPath := envOr("REMOTE_SHELL_MCP_TOKEN", "")
-	if tokenPath == "" {
-		_, _, def, err := daemon.DefaultPaths()
-		if err != nil {
-			fmt.Fprintln(os.Stderr, "config dir:", err)
-			return 1
-		}
-		tokenPath = def
-	}
-
 	ctx, cancel := context.WithTimeout(context.Background(), 60*time.Second)
 	defer cancel()
 
-	if err := launcher.EnsureDaemon(addr, os.Getenv("REMOTE_SHELL_MCP_DAEMON"), nil); err != nil {
-		fmt.Fprintln(os.Stderr, "ensure daemon:", err)
-		return 1
-	}
-	token, err := waitForToken(tokenPath, 5*time.Second)
+	handle, err := launcher.EnsureDaemon(os.Getenv("REMOTE_SHELL_MCP_DAEMON"), nil)
 	if err != nil {
-		fmt.Fprintln(os.Stderr, "read token:", err)
+		fmt.Fprintln(os.Stderr, "ensure daemon:", err)
 		return 1
 	}
 
 	cli := &rpcClient{
-		baseURL: "http://" + addr,
-		token:   token,
+		baseURL: "http://" + handle.Addr,
+		token:   handle.Token,
 		http:    &http.Client{Timeout: 0},
 	}
 

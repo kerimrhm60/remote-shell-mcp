@@ -43,9 +43,9 @@ func NewMCPClient(t *testing.T, launcherBin, addr string) *MCPClient {
 
 func NewMCPClientForDaemon(t *testing.T, launcherBin string, d *Daemon) *MCPClient {
 	t.Helper()
-	args := []string{"-addr", d.addr, "-no-spawn"}
-	if d.tokenPath != "" {
-		args = append(args, "-token", d.tokenPath)
+	args := []string{"-no-spawn"}
+	if d.handlePath != "" {
+		args = append(args, "-handle", d.handlePath)
 	}
 	cmd := exec.Command(launcherBin, args...)
 	stdin, err := cmd.StdinPipe()

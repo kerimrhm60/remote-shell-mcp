@@ -1677,7 +1677,7 @@ func TestUnauthorizedRejected(t *testing.T) {
 	}
 
 	// Right token → 200 (we don't drain the stream, just confirm the handshake passes).
-	tok, err := daemon_ReadToken(daemon.tokenPath)
+	tok, err := daemon_ReadHandle(daemon.handlePath)
 	if err != nil {
 		t.Fatalf("read token: %v", err)
 	}
@@ -1697,13 +1697,13 @@ func TestUnauthorizedRejected(t *testing.T) {
 		}
 	}
 
-	// Confirm the token file mode is 0600.
-	st, err := os.Stat(daemon.tokenPath)
+	// Confirm the handle file mode is 0600.
+	st, err := os.Stat(daemon.handlePath)
 	if err != nil {
-		t.Fatalf("stat token: %v", err)
+		t.Fatalf("stat handle: %v", err)
 	}
 	if mode := st.Mode().Perm(); mode != 0o600 {
-		t.Fatalf("token file mode is %o, want 0600", mode)
+		t.Fatalf("handle file mode is %o, want 0600", mode)
 	}
 }
 

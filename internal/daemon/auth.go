@@ -4,10 +4,7 @@ import (
 	"crypto/rand"
 	"crypto/subtle"
 	"encoding/hex"
-	"fmt"
 	"net/http"
-	"os"
-	"path/filepath"
 	"strings"
 )
 
@@ -19,37 +16,6 @@ func GenerateToken() (string, error) {
 		return "", err
 	}
 	return hex.EncodeToString(buf), nil
-}
-
-func WriteToken(path, token string) error {
-	if err := os.MkdirAll(filepath.Dir(path), 0o700); err != nil {
-		return fmt.Errorf("create token dir: %w", err)
-	}
-	tmp := path + ".tmp"
-	if err := os.WriteFile(tmp, []byte(token), 0o600); err != nil {
-		return err
-	}
-	if err := os.Rename(tmp, path); err != nil {
-		_ = os.Remove(tmp)
-		return err
-	}
-	return nil
-}
-
-func ReadToken(path string) (string, error) {
-	data, err := os.ReadFile(path)
-	if err != nil {
-		return "", err
-	}
-	return strings.TrimSpace(string(data)), nil
-}
-
-func DefaultTokenPath() (string, error) {
-	cfg, err := os.UserConfigDir()
-	if err != nil {
-		return "", err
-	}
-	return filepath.Join(cfg, "remote-shell-mcp", "daemon.token"), nil
 }
 
 func AuthMiddleware(token string, next http.Handler) http.Handler {

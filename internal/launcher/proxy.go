@@ -341,7 +341,7 @@ func (p *Proxy) postOne(ctx context.Context, postURL string, payload []byte) err
 	defer resp.Body.Close()
 	_, _ = io.Copy(io.Discard, resp.Body)
 	// 401 means the token rotated (daemon restarted) — propagate as fatal so
-	// the outer reconnect loop re-reads daemon.token and re-attaches. Any
+	// the outer reconnect loop re-reads daemon.json and re-attaches. Any
 	// other 4xx/5xx is also fatal: we can't recover the JSON-RPC reply for
 	// this request and the parent client will time out waiting for it; better
 	// to reset the bridge.
