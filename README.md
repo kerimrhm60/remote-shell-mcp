@@ -105,6 +105,17 @@ If you'd rather edit configs by hand, the format is just:
 
 The launcher takes no required flags. The first MCP call auto-spawns the daemon detached.
 
+## How it compares
+
+| Approach | Sessions | Tunnels (`-L`/`-R`/`-D`) | PTY shell state | SFTP | Docker | ssh_config / 1Password / agent forwarding |
+|-|-|-|-|-|-|-|
+| `remote-shell-mcp` | Long-lived, daemon outlives the client; auto-reconnect with backoff | All three; auto-rebound after reconnect | Survives across MCP calls (`cd`, env, `vim`, `tail -f`) | Full: read / write / chmod / mkdir / rename / upload / download | unix / tcp / ssh; full container lifecycle; image pull + `docker_run` | Yes: resolves `~/.ssh/config`, uses `IdentityAgent` (1Password / gpg-agent), `ForwardAgent` works |
+| Stdio MCPs that wrap `ssh` per call | Re-dialed for every tool call; nothing survives | Not practical (per-call lifetime) | None (no persistent shell) | Usually missing | Usually missing | Inherits whatever the shell wrapper does |
+| Running `ssh` from a generic Bash MCP | Re-dialed per call | Awkward via `nohup ssh -fN -L …`; you manage the lifetime | None | Via shelling out to `scp`/`rsync` | Via shelling out to `docker -H ssh://…` | Manual |
+| `mcp-server-fetch` / custom HTTP wrappers around the remote | n/a | n/a | n/a | n/a | If the remote exposes the Docker API | n/a |
+
+Practical consequence: `remote-shell-mcp` lets a model open a session in the morning, run a `tail -f` in a `ssh_shell` for hours, hold a `-L 5432:db:5432` tunnel for the same hours, and have all of it still working after the client restarts twice and your laptop went to sleep.
+
 ## Why a daemon?
 
 A stdio MCP server lives and dies with each client connection. That's fine for stateless tools but ruinous for SSH: every Claude Code reload, every `ctrl-C`, every transient shutdown, drops every session, every tunnel, every PTY. With a long-running daemon:

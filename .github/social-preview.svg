@@ -1,0 +1,53 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1280 640" width="1280" height="640" font-family="-apple-system,BlinkMacSystemFont,'SF Mono','Menlo','Monaco','Consolas',monospace">
+  <defs>
+    <linearGradient id="bg" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0" stop-color="#0d1117"/>
+      <stop offset="1" stop-color="#161b22"/>
+    </linearGradient>
+    <linearGradient id="accent" x1="0" y1="0" x2="1" y2="0">
+      <stop offset="0" stop-color="#58a6ff"/>
+      <stop offset="0.5" stop-color="#3fb950"/>
+      <stop offset="1" stop-color="#bc8cff"/>
+    </linearGradient>
+  </defs>
+
+  <!-- Background -->
+  <rect width="1280" height="640" fill="url(#bg)"/>
+
+  <!-- Decorative grid -->
+  <g stroke="#21262d" stroke-width="1" opacity="0.5">
+    <line x1="0" y1="160" x2="1280" y2="160"/>
+    <line x1="0" y1="480" x2="1280" y2="480"/>
+    <line x1="320" y1="0" x2="320" y2="640"/>
+    <line x1="960" y1="0" x2="960" y2="640"/>
+  </g>
+
+  <!-- Accent bar -->
+  <rect x="0" y="0" width="1280" height="6" fill="url(#accent)"/>
+
+  <!-- Title -->
+  <text x="80" y="220" font-size="76" font-weight="700" fill="#f0f6fc" letter-spacing="-2">remote-shell-mcp</text>
+
+  <!-- Tagline line 1 -->
+  <text x="80" y="290" font-size="32" font-weight="500" fill="#8b949e">Persistent SSH, SFTP, port forwards, and Docker</text>
+  <text x="80" y="334" font-size="32" font-weight="500" fill="#8b949e">over the Model Context Protocol.</text>
+
+  <!-- Box / accent -->
+  <text x="80" y="430" font-size="22" fill="#3fb950">$ remote-shell-mcp setup</text>
+  <text x="80" y="466" font-size="20" fill="#7d8590">Detected Claude Code / Desktop / Cursor / Codex CLI.</text>
+  <text x="80" y="494" font-size="20" fill="#7d8590">Install into all? [Y/n] _</text>
+
+  <!-- Right-side tags -->
+  <g font-size="18" fill="#79c0ff">
+    <text x="1190" y="160" text-anchor="end">SSH</text>
+    <text x="1190" y="200" text-anchor="end">SFTP</text>
+    <text x="1190" y="240" text-anchor="end">-L  -R  -D</text>
+    <text x="1190" y="280" text-anchor="end">Docker</text>
+    <text x="1190" y="320" text-anchor="end">PTY shells</text>
+    <text x="1190" y="360" text-anchor="end">auto-reconnect</text>
+    <text x="1190" y="400" text-anchor="end">survives restarts</text>
+  </g>
+
+  <!-- Footer -->
+  <text x="80" y="600" font-size="18" fill="#6e7681">github.com/jaenster/remote-shell-mcp · MIT</text>
+</svg>
