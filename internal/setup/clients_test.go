@@ -193,6 +193,81 @@ command = "/bin/other"
 	}
 }
 
+// New-adapter coverage: every client we ship in AllClients() must return a
+// usable ConfigPath without erroring, and its Install path must produce a
+// valid file. A wrong ConfigPath on Windows (e.g. forgetting APPDATA) used
+// to silently fall back to garbage paths; this test catches that on the host
+// it actually runs on.
+func TestEveryClientConfigPathResolves(t *testing.T) {
+	for _, c := range AllClients() {
+		t.Run(c.Name(), func(t *testing.T) {
+			p, err := c.ConfigPath()
+			if err != nil {
+				t.Fatalf("ConfigPath: %v", err)
+			}
+			if p == "" {
+				t.Fatalf("empty ConfigPath")
+			}
+			if !filepath.IsAbs(p) {
+				t.Fatalf("ConfigPath not absolute: %q", p)
+			}
+		})
+	}
+}
+
+func TestZedUsesContextServersKey(t *testing.T) {
+	// Zed differs from every other JSON client because it stores MCP servers
+	// under "context_servers" rather than "mcpServers". A regression here
+	// would silently produce settings.json files Zed ignores.
+	dir := t.TempDir()
+	path := filepath.Join(dir, "settings.json")
+	if _, err := mergeJSONMCPServers(path, "remote-shell", "/bin/launch", nil, nil, "context_servers", false); err != nil {
+		t.Fatalf("merge: %v", err)
+	}
+	data, _ := os.ReadFile(path)
+	var got map[string]any
+	if err := json.Unmarshal(data, &got); err != nil {
+		t.Fatalf("parse: %v", err)
+	}
+	if _, ok := got["context_servers"]; !ok {
+		t.Fatalf("expected context_servers key, got: %v", got)
+	}
+	if _, ok := got["mcpServers"]; ok {
+		t.Fatalf("unexpected mcpServers key on Zed config")
+	}
+}
+
+func TestContinueSkipsWhenOnlyYAMLPresent(t *testing.T) {
+	// If a user has migrated to Continue's YAML config we should NOT silently
+	// create a stray config.json that Continue ignores — we return an error
+	// pointing them at the YAML file so they can edit it themselves.
+	dir := t.TempDir()
+	// Simulate Continue's config dir layout: only config.yaml present.
+	yamlPath := filepath.Join(dir, "config.yaml")
+	if err := os.WriteFile(yamlPath, []byte("# continue config\n"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+
+	// Point Continue at our temp dir by overriding HOME (Continue.ConfigPath
+	// reads it via os.UserHomeDir). We restore at the end so we don't poison
+	// other tests in the package.
+	origHome := os.Getenv("HOME")
+	t.Cleanup(func() { _ = os.Setenv("HOME", origHome) })
+	_ = os.Setenv("HOME", filepath.Dir(dir))
+	if err := os.Mkdir(filepath.Join(filepath.Dir(dir), ".continue"), 0o700); err == nil {
+		// We need ~/.continue/config.yaml relative to the fake HOME.
+		_ = os.Rename(yamlPath, filepath.Join(filepath.Dir(dir), ".continue", "config.yaml"))
+	}
+
+	res, err := Continue{}.Install("x", "/bin/x", nil, nil, false)
+	if err == nil {
+		t.Fatalf("expected error when YAML-only, got result=%+v", res)
+	}
+	if !strings.Contains(err.Error(), "YAML") {
+		t.Fatalf("error should mention YAML: %v", err)
+	}
+}
+
 func TestTOMLMergeWithArgsAndEnv(t *testing.T) {
 	dir := t.TempDir()
 	path := filepath.Join(dir, "config.toml")

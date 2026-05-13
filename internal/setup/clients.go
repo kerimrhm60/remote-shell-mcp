@@ -116,7 +116,128 @@ func (c CodexCLI) Install(name, command string, args []string, env map[string]st
 }
 
 // ----------------------------------------------------------------------------
-// JSON merge — used by Claude Code + Desktop
+// Cursor — writes ~/.cursor/mcp.json with {"mcpServers": {...}}
+// ----------------------------------------------------------------------------
+
+type Cursor struct{}
+
+func (Cursor) Name() string { return "Cursor" }
+
+func (Cursor) ConfigPath() (string, error) {
+	home, err := os.UserHomeDir()
+	if err != nil {
+		return "", err
+	}
+	return filepath.Join(home, ".cursor", "mcp.json"), nil
+}
+
+func (c Cursor) Install(name, command string, args []string, env map[string]string, dryRun bool) (Result, error) {
+	path, err := c.ConfigPath()
+	if err != nil {
+		return Result{}, err
+	}
+	return mergeJSONMCPServers(path, name, command, args, env, "mcpServers", dryRun)
+}
+
+// ----------------------------------------------------------------------------
+// Windsurf — writes ~/.codeium/windsurf/mcp_config.json with {"mcpServers": ...}
+// ----------------------------------------------------------------------------
+
+type Windsurf struct{}
+
+func (Windsurf) Name() string { return "Windsurf" }
+
+func (Windsurf) ConfigPath() (string, error) {
+	home, err := os.UserHomeDir()
+	if err != nil {
+		return "", err
+	}
+	return filepath.Join(home, ".codeium", "windsurf", "mcp_config.json"), nil
+}
+
+func (c Windsurf) Install(name, command string, args []string, env map[string]string, dryRun bool) (Result, error) {
+	path, err := c.ConfigPath()
+	if err != nil {
+		return Result{}, err
+	}
+	return mergeJSONMCPServers(path, name, command, args, env, "mcpServers", dryRun)
+}
+
+// ----------------------------------------------------------------------------
+// Zed — adds to settings.json under "context_servers" (Zed's MCP key name).
+// settings.json lives at the user-config-dir (XDG-ish on macOS too).
+// ----------------------------------------------------------------------------
+
+type Zed struct{}
+
+func (Zed) Name() string { return "Zed" }
+
+func (Zed) ConfigPath() (string, error) {
+	switch runtime.GOOS {
+	case "windows":
+		dir := os.Getenv("APPDATA")
+		if dir == "" {
+			return "", errors.New("APPDATA not set")
+		}
+		return filepath.Join(dir, "Zed", "settings.json"), nil
+	default:
+		// macOS and Linux both use ~/.config/zed/settings.json. Zed doesn't
+		// use ~/Library/Application Support on Darwin even though most other
+		// macOS apps do.
+		home, err := os.UserHomeDir()
+		if err != nil {
+			return "", err
+		}
+		return filepath.Join(home, ".config", "zed", "settings.json"), nil
+	}
+}
+
+func (z Zed) Install(name, command string, args []string, env map[string]string, dryRun bool) (Result, error) {
+	path, err := z.ConfigPath()
+	if err != nil {
+		return Result{}, err
+	}
+	return mergeJSONMCPServers(path, name, command, args, env, "context_servers", dryRun)
+}
+
+// ----------------------------------------------------------------------------
+// Continue.dev — ~/.continue/config.json with "mcpServers" (when JSON is in
+// use). Recent Continue ships with config.yaml instead; if that's the only
+// file present we skip and report it rather than fight two source formats.
+// ----------------------------------------------------------------------------
+
+type Continue struct{}
+
+func (Continue) Name() string { return "Continue.dev" }
+
+func (Continue) ConfigPath() (string, error) {
+	home, err := os.UserHomeDir()
+	if err != nil {
+		return "", err
+	}
+	return filepath.Join(home, ".continue", "config.json"), nil
+}
+
+func (c Continue) Install(name, command string, args []string, env map[string]string, dryRun bool) (Result, error) {
+	path, err := c.ConfigPath()
+	if err != nil {
+		return Result{}, err
+	}
+	// If the YAML variant exists and JSON does not, the user's on the modern
+	// Continue config format which we don't write to yet. Bail with a clear
+	// message instead of creating a stray config.json that Continue ignores.
+	yamlPath := filepath.Join(filepath.Dir(path), "config.yaml")
+	if _, statJSON := os.Stat(path); errors.Is(statJSON, fs.ErrNotExist) {
+		if _, statYAML := os.Stat(yamlPath); statYAML == nil {
+			return Result{Path: yamlPath, Action: "skipped"},
+				fmt.Errorf("Continue.dev uses YAML config (%s); add the entry by hand for now", yamlPath)
+		}
+	}
+	return mergeJSONMCPServers(path, name, command, args, env, "mcpServers", dryRun)
+}
+
+// ----------------------------------------------------------------------------
+// JSON merge — used by Claude Code + Desktop + Cursor + Windsurf + Zed + Continue
 // ----------------------------------------------------------------------------
 
 func mergeJSONMCPServers(path, name, command string, args []string, env map[string]string, key string, dryRun bool) (Result, error) {

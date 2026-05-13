@@ -10,9 +10,16 @@ import (
 )
 
 // AllClients returns the MCP clients setup knows how to register with.
-// Add more (Cursor, Continue, Zed, VS Code) by appending here.
 func AllClients() []Client {
-	return []Client{ClaudeCode{}, ClaudeDesktop{}, CodexCLI{}}
+	return []Client{
+		ClaudeCode{},
+		ClaudeDesktop{},
+		CodexCLI{},
+		Cursor{},
+		Windsurf{},
+		Zed{},
+		Continue{},
+	}
 }
 
 // DetectedClient is a Client whose config file is present (or whose parent
