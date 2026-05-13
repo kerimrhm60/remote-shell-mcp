@@ -1713,21 +1713,17 @@ func TestLauncherAutoSpawnsDaemon(t *testing.T) {
 		t.Skipf("docker not available: %v", err)
 	}
 
-	port := PickFreePort(t)
-	addr := fmt.Sprintf("127.0.0.1:%d", port)
 	stateDir := t.TempDir()
-
-	// Confirm no daemon is listening on the picked port.
-	if c, err := net.DialTimeout("tcp", addr, 200*time.Millisecond); err == nil {
-		_ = c.Close()
-		t.Fatalf("port %s already in use before test", addr)
-	}
+	handlePath := stateDir + "/daemon.json"
 
 	// Spawn the launcher WITHOUT -no-spawn; it must start the daemon itself.
-	cmd := exec.Command(launcherBin, "-addr", addr, "-daemon-binary", daemonBin)
+	// The daemon will pick a free port at :0 and publish addr+token to
+	// handlePath; the launcher reads it back.
+	cmd := exec.Command(launcherBin, "-handle", handlePath, "-daemon-binary", daemonBin)
 	cmd.Env = append(cmd.Environ(),
 		"REMOTE_SHELL_MCP_STATE="+stateDir+"/state.json",
 		"REMOTE_SHELL_MCP_LOCK="+stateDir+"/daemon.lock",
+		"REMOTE_SHELL_MCP_HANDLE="+handlePath,
 		// Pin JSON so the JSON-unmarshalling assertion below stays valid
 		// even though TOON is the production default.
 		"REMOTE_SHELL_MCP_FORMAT=json",
