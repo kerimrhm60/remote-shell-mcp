@@ -1143,19 +1143,17 @@ func TestDockerRunAndImage(t *testing.T) {
 
 	// Image should now appear in the list.
 	var images []struct {
-		ID       string   `json:"id"`
-		RepoTags []string `json:"repo_tags"`
+		ID  string `json:"id"`
+		Tag string `json:"tag"`
 	}
 	if err := mc.CallJSON(ctx, "docker_image_list", map[string]any{"host_id": "d1"}, &images); err != nil {
 		t.Fatalf("docker_image_list: %v", err)
 	}
 	var found bool
 	for _, im := range images {
-		for _, tag := range im.RepoTags {
-			if strings.HasPrefix(tag, "alpine:3.20") {
-				found = true
-				break
-			}
+		if strings.HasPrefix(im.Tag, "alpine:3.20") {
+			found = true
+			break
 		}
 	}
 	if !found {

@@ -19,6 +19,30 @@ type ImageSummary struct {
 	Labels      map[string]string `json:"labels,omitempty"`
 }
 
+// ImageRow is the primitive-only projection used by docker_image_list so the
+// response stays in TOON's compact tabular form. Drops repo_digests + labels;
+// shortens the id; emits the first repo tag.
+type ImageRow struct {
+	ID      string    `json:"id"` // shortened to 19 chars (sha256:<12>)
+	Tag     string    `json:"tag"`
+	Size    int64     `json:"size"`
+	Created time.Time `json:"created"`
+}
+
+func (i ImageSummary) Row() ImageRow {
+	id := i.ID
+	// Image IDs are commonly "sha256:<64 hex>". Keep the algorithm prefix and a
+	// short hash so the row is still human-recognizable.
+	if len(id) > 19 {
+		id = id[:19]
+	}
+	tag := ""
+	if len(i.RepoTags) > 0 {
+		tag = i.RepoTags[0]
+	}
+	return ImageRow{ID: id, Tag: tag, Size: i.Size, Created: i.Created}
+}
+
 func (h *Host) ListImages(ctx context.Context, all bool) ([]ImageSummary, error) {
 	c, err := h.client()
 	if err != nil {

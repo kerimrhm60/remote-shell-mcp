@@ -5,6 +5,7 @@ import (
 	"context"
 	"fmt"
 	"io"
+	"strings"
 	"time"
 
 	"github.com/moby/moby/api/pkg/stdcopy"
@@ -22,6 +23,48 @@ type ContainerSummary struct {
 	Created time.Time         `json:"created"`
 	Ports   []ContainerPort   `json:"ports,omitempty"`
 	Labels  map[string]string `json:"labels,omitempty"`
+}
+
+// ContainerRow is the primitive-only projection used by docker_containers so
+// the tool's response stays in TOON's compact tabular form. The trade-off:
+// ports collapse to a single comma-joined string and labels are dropped (use
+// docker_container_inspect for full detail).
+type ContainerRow struct {
+	ID     string `json:"id"`     // shortened to 12 hex chars
+	Name   string `json:"name"`   // first name, leading slash stripped
+	Image  string `json:"image"`
+	State  string `json:"state"`
+	Status string `json:"status"`
+	Ports  string `json:"ports,omitempty"` // e.g. "0.0.0.0:80->80/tcp,0.0.0.0:443->443/tcp"
+}
+
+func (c ContainerSummary) Row() ContainerRow {
+	id := c.ID
+	if len(id) > 12 {
+		id = id[:12]
+	}
+	name := ""
+	if len(c.Names) > 0 {
+		name = strings.TrimPrefix(c.Names[0], "/")
+	}
+	ports := make([]string, 0, len(c.Ports))
+	for _, p := range c.Ports {
+		var s string
+		if p.PublicPort != 0 {
+			if p.IP != "" {
+				s = fmt.Sprintf("%s:%d->%d/%s", p.IP, p.PublicPort, p.PrivatePort, p.Type)
+			} else {
+				s = fmt.Sprintf("%d->%d/%s", p.PublicPort, p.PrivatePort, p.Type)
+			}
+		} else {
+			s = fmt.Sprintf("%d/%s", p.PrivatePort, p.Type)
+		}
+		ports = append(ports, s)
+	}
+	return ContainerRow{
+		ID: id, Name: name, Image: c.Image, State: c.State, Status: c.Status,
+		Ports: strings.Join(ports, ","),
+	}
 }
 
 type ContainerPort struct {

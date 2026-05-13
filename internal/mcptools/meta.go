@@ -7,6 +7,9 @@ import (
 
 	"github.com/mark3labs/mcp-go/mcp"
 	"github.com/mark3labs/mcp-go/server"
+
+	"github.com/jaenster/remote-shell-mcp/internal/dockerx"
+	"github.com/jaenster/remote-shell-mcp/internal/sshx"
 )
 
 var startedAt = time.Now()
@@ -45,16 +48,25 @@ func handleStatus(st *State) server.ToolHandlerFunc {
 		if st.Store != nil {
 			path = st.Store.Path()
 		}
+		// Project list contents into row-form so TOON renders compact tables.
+		sessionRows := make([]sshx.SessionRow, 0, len(sshList))
+		for _, s := range sshList {
+			sessionRows = append(sessionRows, s.Row())
+		}
+		hostRows := make([]dockerx.HostRow, 0, len(dkList))
+		for _, h := range dkList {
+			hostRows = append(hostRows, h.Row())
+		}
 		return st.resultJSON(map[string]any{
-			"uptime":         time.Since(startedAt).String(),
-			"ssh_sessions":   len(sshList),
-			"docker_hosts":   len(dkList),
-			"forwards":       len(fwds),
-			"goroutines":     runtime.NumGoroutine(),
-			"state_path":     path,
-			"sessions":       sshList,
-			"hosts":          dkList,
-			"forwards_list":  fwds,
+			"uptime":        time.Since(startedAt).String(),
+			"ssh_sessions":  len(sshList),
+			"docker_hosts":  len(dkList),
+			"forwards":      len(fwds),
+			"goroutines":    runtime.NumGoroutine(),
+			"state_path":    path,
+			"sessions":      sessionRows,
+			"hosts":         hostRows,
+			"forwards_list": fwds,
 		})
 	}
 }

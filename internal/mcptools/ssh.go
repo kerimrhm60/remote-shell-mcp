@@ -116,7 +116,12 @@ func handleSSHDisconnect(st *State) server.ToolHandlerFunc {
 
 func handleSSHList(st *State) server.ToolHandlerFunc {
 	return func(ctx context.Context, req mcp.CallToolRequest) (*mcp.CallToolResult, error) {
-		return st.resultJSON(st.SSH.List())
+		full := st.SSH.List()
+		rows := make([]sshx.SessionRow, 0, len(full))
+		for _, s := range full {
+			rows = append(rows, s.Row())
+		}
+		return st.resultJSON(rows)
 	}
 }
 

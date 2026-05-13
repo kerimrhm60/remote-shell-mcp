@@ -200,7 +200,12 @@ func handleDockerDisconnect(st *State) server.ToolHandlerFunc {
 
 func handleDockerListHosts(st *State) server.ToolHandlerFunc {
 	return func(ctx context.Context, req mcp.CallToolRequest) (*mcp.CallToolResult, error) {
-		return st.resultJSON(st.Docker.List())
+		full := st.Docker.List()
+		rows := make([]dockerx.HostRow, 0, len(full))
+		for _, h := range full {
+			rows = append(rows, h.Row())
+		}
+		return st.resultJSON(rows)
 	}
 }
 
@@ -225,7 +230,11 @@ func handleDockerContainers(st *State) server.ToolHandlerFunc {
 		if err != nil {
 			return resultErr(err)
 		}
-		return st.resultJSON(list)
+		rows := make([]dockerx.ContainerRow, 0, len(list))
+		for _, c := range list {
+			rows = append(rows, c.Row())
+		}
+		return st.resultJSON(rows)
 	}
 }
 
@@ -424,7 +433,11 @@ func handleDockerImageList(st *State) server.ToolHandlerFunc {
 		if err != nil {
 			return resultErr(err)
 		}
-		return st.resultJSON(out)
+		rows := make([]dockerx.ImageRow, 0, len(out))
+		for _, im := range out {
+			rows = append(rows, im.Row())
+		}
+		return st.resultJSON(rows)
 	}
 }
 

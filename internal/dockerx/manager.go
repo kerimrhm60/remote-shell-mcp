@@ -35,6 +35,21 @@ type HostInfo struct {
 	Shells      []string  `json:"shells"`
 }
 
+// HostRow is the compact, primitive-only projection used by docker_list_hosts
+// — see sshx.SessionRow for the rationale.
+type HostRow struct {
+	ID         string `json:"id"`
+	Host       string `json:"host"`
+	State      string `json:"state"`
+	LastError  string `json:"last_error,omitempty"`
+	Persistent bool   `json:"persistent"`
+	Shells     int    `json:"shells"`
+}
+
+func (i HostInfo) Row() HostRow {
+	return HostRow{ID: i.ID, Host: i.Host, State: i.State, LastError: i.LastError, Persistent: i.Persistent, Shells: len(i.Shells)}
+}
+
 func (h *Host) Info() HostInfo {
 	h.mu.RLock()
 	state := "disconnected"
